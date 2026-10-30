@@ -32,7 +32,9 @@
     find_fallback_node/6,
     find_fallback_node/7,
     find_fallback_node/8,
-    max_space/0
+    max_space/0,
+    build_closest_checker/1,
+    is_closest_node/3
 ]).
 
 %% 128-bit space constants
@@ -284,3 +286,61 @@ find_fallback_node(RoutingTable, LeafSet, NeighborhoodSet, KeyHex, KeyInt, SelfH
 
 max_space() ->
     ?MAX_SPACE.
+
+%%--------------------------------------------------------------------
+%% Fast O(log N) Closest Node Verification (Item 4)
+%% Precomputes sorted IDs for circular binary search.
+%%--------------------------------------------------------------------
+build_closest_checker(Nodes) ->
+    PidToId = maps:from_list([{Pid, Id} || {Id, _, Pid} <- Nodes]),
+    SortedIds = lists:sort([Id || {Id, _, _} <- Nodes]),
+    Tuple = list_to_tuple(SortedIds),
+    Size = tuple_size(Tuple),
+    {PidToId, Tuple, Size}.
+
+is_closest_node(KeyHex, DeliveringPid, {PidToId, Tuple, Size}) ->
+    KeyInt = hex_to_int(KeyHex),
+    TrueClosestId = find_closest_id(KeyInt, Tuple, Size),
+    TrueMinDist = dist(KeyInt, TrueClosestId),
+    case maps:find(DeliveringPid, PidToId) of
+        {ok, DelivId} ->
+            dist(KeyInt, DelivId) == TrueMinDist;
+        error ->
+            false
+    end.
+
+find_closest_id(KeyInt, SortedTuple, Size) ->
+    case Size of
+        1 ->
+            element(1, SortedTuple);
+        _ ->
+            First = element(1, SortedTuple),
+            Last = element(Size, SortedTuple),
+            if
+                KeyInt =< First orelse KeyInt >= Last ->
+                    choose_closer(KeyInt, First, Last);
+                true ->
+                    {Pred, Succ} = bsearch_neighbors(KeyInt, SortedTuple, 1, Size),
+                    choose_closer(KeyInt, Pred, Succ)
+            end
+    end.
+
+choose_closer(KeyInt, Id1, Id2) ->
+    D1 = dist(KeyInt, Id1),
+    D2 = dist(KeyInt, Id2),
+    if
+        D1 =< D2 -> Id1;
+        true -> Id2
+    end.
+
+bsearch_neighbors(_KeyInt, Tuple, Low, High) when Low + 1 == High ->
+    {element(Low, Tuple), element(High, Tuple)};
+bsearch_neighbors(KeyInt, Tuple, Low, High) ->
+    Mid = (Low + High) div 2,
+    MidVal = element(Mid, Tuple),
+    if
+        MidVal =< KeyInt ->
+            bsearch_neighbors(KeyInt, Tuple, Mid, High);
+        true ->
+            bsearch_neighbors(KeyInt, Tuple, Low, Mid)
+    end.

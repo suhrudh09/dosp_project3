@@ -64,19 +64,23 @@ run(NumNodes, NumRequests, NumFailures, FailureType) ->
     %% Step 3: Run Requests
     NumSurviving = length(SurvivingNodes),
     TotalExpectedRequests = NumSurviving * NumRequests,
+    IntervalMs = case FailureType of
+        transient -> 20;
+        _ -> 50
+    end,
     io:format("[Request Phase] ~p surviving nodes sending ~p requests each (~p total)...~n",
               [NumSurviving, NumRequests, TotalExpectedRequests]),
 
-    %% Start requests on all surviving nodes (50ms interval for simulation)
     lists:foreach(
         fun({_Id, _Hex, Pid}) ->
-            Pid ! {start_requests, NumRequests, 50}
+            Pid ! {start_requests, NumRequests, IntervalMs}
         end,
         SurvivingNodes
     ),
 
-    %% Step 4: Collect Delivered Requests and verify delivery correctness
-    {TotalHops, DeliveredCount, CorrectCount} = collect_requests(TotalExpectedRequests, SurvivingNodes, 0, 0, 0),
+    %% Step 4: Collect Delivered Requests using fast O(log N) verification
+    Checker = pastry_util:build_closest_checker(SurvivingNodes),
+    {TotalHops, DeliveredCount, CorrectCount} = collect_requests(TotalExpectedRequests, Checker, 0, 0, 0),
     TotalTime = erlang:monotonic_time(millisecond) - StartTime,
 
     %% Step 5: Report Results
@@ -94,6 +98,7 @@ run(NumNodes, NumRequests, NumFailures, FailureType) ->
     io:format("  Total Time Taken:   ~p ms~n", [TotalTime]),
     io:format("  Average number of hops = ~.2f~n", [AvgHops]),
     io:format("=============================================================~n"),
+    lists:foreach(fun({_, _, Pid}) -> exit(Pid, kill) end, SurvivingNodes),
     {DeliveryRate, CorrectRate, AvgHops}.
 
 join_nodes(0, _BootstrapPid, Acc) ->
@@ -143,7 +148,7 @@ inject_failures(AllNodes, NumFailures, connection) ->
     {AllNodes, ActualDrops};
 
 inject_failures(AllNodes, NumFailures, transient) ->
-    %% Drop links with temporary glitch and schedule restoration via restore_link
+    %% Drop links with temporary glitch and schedule restoration via restore_link during traffic
     NodePids = [P || {_Id, _Hex, P} <- AllNodes],
     AllPairs = lists:usort([
         case P1 < P2 of
@@ -159,32 +164,22 @@ inject_failures(AllNodes, NumFailures, transient) ->
         fun({P1, P2}) ->
             P1 ! {drop_link, P2},
             P2 ! {drop_link, P1},
-            %% Auto-restore link after 150ms to simulate transient glitch recovery
-            erlang:send_after(150, P1, {restore_link, P2}),
-            erlang:send_after(150, P2, {restore_link, P1})
+            %% Auto-restore link after 40ms to simulate transient glitch recovery mid-traffic
+            erlang:send_after(40, P1, {restore_link, P2}),
+            erlang:send_after(40, P2, {restore_link, P1})
         end,
         PairsToDrop
     ),
     {AllNodes, ActualDrops}.
 
-is_closest_node(KeyHex, DeliveringPid, SurvivingNodes) ->
-    KeyInt = pastry_util:hex_to_int(KeyHex),
-    MinDist = lists:min([pastry_util:dist(KeyInt, Id) || {Id, _, _} <- SurvivingNodes]),
-    case lists:keyfind(DeliveringPid, 3, SurvivingNodes) of
-        {DelivId, _, _} ->
-            pastry_util:dist(KeyInt, DelivId) == MinDist;
-        false ->
-            false
-    end.
-
-collect_requests(0, _SurvivingNodes, TotalHops, DeliveredCount, CorrectCount) ->
+collect_requests(0, _Checker, TotalHops, DeliveredCount, CorrectCount) ->
     {TotalHops, DeliveredCount, CorrectCount};
-collect_requests(Remaining, SurvivingNodes, TotalHops, DeliveredCount, CorrectCount) ->
+collect_requests(Remaining, Checker, TotalHops, DeliveredCount, CorrectCount) ->
     receive
         {request_delivered, NodePid, KeyHex, Hops} ->
-            IsCorrect = is_closest_node(KeyHex, NodePid, SurvivingNodes),
+            IsCorrect = pastry_util:is_closest_node(KeyHex, NodePid, Checker),
             NewCorrect = case IsCorrect of true -> CorrectCount + 1; false -> CorrectCount end,
-            collect_requests(Remaining - 1, SurvivingNodes, TotalHops + Hops, DeliveredCount + 1, NewCorrect)
+            collect_requests(Remaining - 1, Checker, TotalHops + Hops, DeliveredCount + 1, NewCorrect)
     after 10000 ->
         io:format("Warning: Request collection timed out with ~p requests remaining!~n", [Remaining]),
         {TotalHops, DeliveredCount, CorrectCount}
@@ -232,7 +227,7 @@ run_benchmark() ->
     io:format("-----------------------------------------------------------------------------------------~n~n"),
 
     io:format("-----------------------------------------------------------------------------------------~n"),
-    io:format(" EXPERIMENT 3: Transient Link Failure & Link Restoration (Nodes: ~p)~n", [N]),
+    io:format(" EXPERIMENT 3: Transient Link Glitch & Live Link Restoration (Nodes: ~p)~n", [N]),
     io:format("-----------------------------------------------------------------------------------------~n"),
     io:format(" Glitched Links | Delivery Rate | Correct Node | Avg Hops Traversed ~n"),
     io:format("-----------------------------------------------------------------------------------------~n"),
@@ -256,11 +251,16 @@ run_silent(NumNodes, NumRequests, NumFailures, FailureType) ->
     AllNodes = join_nodes(NumNodes - 1, BootstrapPid, [BootstrapNode]),
     {SurvivingNodes, _} = inject_failures(AllNodes, NumFailures, FailureType),
     TotalExpected = length(SurvivingNodes) * NumRequests,
+    IntervalMs = case FailureType of
+        transient -> 20; % Traffic window spans 100ms across 40ms auto-restoration
+        _ -> 10
+    end,
     lists:foreach(
-        fun({_Id, _Hex, Pid}) -> Pid ! {start_requests, NumRequests, 10} end,
+        fun({_Id, _Hex, Pid}) -> Pid ! {start_requests, NumRequests, IntervalMs} end,
         SurvivingNodes
     ),
-    {TotalHops, DeliveredCount, CorrectCount} = collect_requests(TotalExpected, SurvivingNodes, 0, 0, 0),
+    Checker = pastry_util:build_closest_checker(SurvivingNodes),
+    {TotalHops, DeliveredCount, CorrectCount} = collect_requests(TotalExpected, Checker, 0, 0, 0),
     DeliveryRate = (DeliveredCount / max(1, TotalExpected)) * 100.0,
     CorrectRate = (CorrectCount / max(1, TotalExpected)) * 100.0,
     AvgHops = case DeliveredCount of

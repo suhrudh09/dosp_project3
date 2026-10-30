@@ -34,8 +34,9 @@ run(NumNodes, NumRequests) ->
         Nodes
     ),
     
-    %% Collect request completions
-    {TotalHops, DeliveredCount, CorrectCount} = collect_requests(TotalExpectedRequests, Nodes, 0, 0, 0),
+    %% Collect request completions using fast O(log N) verification
+    Checker = pastry_util:build_closest_checker(Nodes),
+    {TotalHops, DeliveredCount, CorrectCount} = collect_requests(TotalExpectedRequests, Checker, 0, 0, 0),
     TotalTime = erlang:monotonic_time(millisecond) - StartTime,
     
     AvgHops = TotalHops / max(1, DeliveredCount),
@@ -59,24 +60,14 @@ join_remaining_nodes(Remaining, BootstrapPid, Acc) ->
         error(join_timeout)
     end.
 
-is_closest_node(KeyHex, DeliveringPid, AllNodes) ->
-    KeyInt = pastry_util:hex_to_int(KeyHex),
-    MinDist = lists:min([pastry_util:dist(KeyInt, Id) || {Id, _, _} <- AllNodes]),
-    case lists:keyfind(DeliveringPid, 3, AllNodes) of
-        {DelivId, _, _} ->
-            pastry_util:dist(KeyInt, DelivId) == MinDist;
-        false ->
-            false
-    end.
-
-collect_requests(0, _Nodes, TotalHops, DeliveredCount, CorrectCount) ->
+collect_requests(0, _Checker, TotalHops, DeliveredCount, CorrectCount) ->
     {TotalHops, DeliveredCount, CorrectCount};
-collect_requests(Remaining, Nodes, TotalHops, DeliveredCount, CorrectCount) ->
+collect_requests(Remaining, Checker, TotalHops, DeliveredCount, CorrectCount) ->
     receive
         {request_delivered, NodePid, KeyHex, Hops} ->
-            IsCorrect = is_closest_node(KeyHex, NodePid, Nodes),
+            IsCorrect = pastry_util:is_closest_node(KeyHex, NodePid, Checker),
             NewCorrect = case IsCorrect of true -> CorrectCount + 1; false -> CorrectCount end,
-            collect_requests(Remaining - 1, Nodes, TotalHops + Hops, DeliveredCount + 1, NewCorrect)
+            collect_requests(Remaining - 1, Checker, TotalHops + Hops, DeliveredCount + 1, NewCorrect)
     after 10000 ->
         io:format("Warning: Request collection timed out with ~p requests remaining!~n", [Remaining]),
         {TotalHops, DeliveredCount, CorrectCount}

@@ -15,7 +15,7 @@
    * **State Maintenance (per Actor)**:
      * **Leaf Set ($L$, $|L| = 16$)**: Maintained as $L/2 = 8$ counter-clockwise (smaller) and $L/2 = 8$ clockwise (larger) neighbors along the circular ring.
      * **Routing Table ($R$, $32 \times 16$)**: 32 rows and 16 columns corresponding to prefix length $l$ and next hex digit $d$.
-     * **Neighborhood Set ($M$, $|M| = 16$)**: Initialized with bootstrap and proximate peer records, and actively queried during fallback routing.
+     * **Neighborhood Set ($M$, $|M| = 16$)**: Initialized with bootstrap and proximate peer records discovered along the join path, and actively queried during fallback routing.
    * **Pastry Routing Algorithm (Section 2.2)**:
      * **Step 1 (Leaf Set Range)**: Evaluates whether target key $D$ falls within the arc of the leaf set. If so, routes directly to the leaf node (or self) minimizing numerical distance $|D - L_i|$.
      * **Step 2 (Routing Table)**: If $D$ is outside the leaf set range, identifies common prefix length $l = \text{shl}(A, D)$ and forwards to $R[l][D_l]$.
@@ -76,12 +76,12 @@ The system was evaluated across progressively larger topologies up to **10,000 n
 | **500**            | 2.24                       | 1,000          | 263 ms     | 46 ms        | **2.26**     |
 | **1,000**          | 2.49                       | 2,000          | 595 ms     | 162 ms       | **2.60**     |
 | **2,000**          | 2.74                       | 4,000          | 1,344 ms   | 675 ms       | **2.84**     |
-| **5,000**          | 3.07                       | 10,000         | 4,099 ms   | 4,305 ms     | **3.11**     |
-| **10,000**         | 3.32                       | 20,000         | 8,420 ms   | 7,850 ms     | **3.39**     |
+| **5,000**          | 3.07                       | 10,000         | 3,821 ms   | 1,204 ms     | **3.11**     |
+| **10,000**         | 3.32                       | 20,000         | 8,007 ms   | 3,639 ms     | **3.39**     |
 
 * **Largest Network Handled**: **10,000 nodes** (peer actors).
 * **Key Finding**: Average hop counts closely match $\log_{16}(N)$ at all scales, confirming Pastry's $O(\log_{2^b} N)$ logarithmic routing bound.
-* **Throughput**: 10,000 nodes were initialized, joined, and routed 20,000 requests in approximately **16 seconds total**.
+* **Throughput**: 10,000 nodes were initialized, joined, and routed 20,000 requests in approximately **11.6 seconds total** (including end-to-end routing accuracy verification on all 20,000 deliveries).
 
 ---
 

@@ -35,14 +35,14 @@ start(CoordinatorPid, BootstrapPid, Opts) ->
     spawn(fun() -> init(CoordinatorPid, BootstrapPid, Opts) end).
 
 start_link(CoordinatorPid, BootstrapPid, Opts) ->
-    start(CoordinatorPid, BootstrapPid, Opts).
+    spawn_link(fun() -> init(CoordinatorPid, BootstrapPid, Opts) end).
 
 %% Start the very first node (bootstrap node)
 start_bootstrap(CoordinatorPid, Opts) ->
     spawn(fun() -> init_bootstrap(CoordinatorPid, Opts) end).
 
 start_link_bootstrap(CoordinatorPid, Opts) ->
-    start_bootstrap(CoordinatorPid, Opts).
+    spawn_link(fun() -> init_bootstrap(CoordinatorPid, Opts) end).
 
 %% Client API for Object Access Service
 put(NodePid, KeyHex, ValueStr) ->
@@ -172,18 +172,10 @@ loop(State) ->
             self() ! {route, Msg, KeyHex, KeyInt, 0, []},
             loop(State);
 
-        {get_reply, KeyHex, Val, DeliveringPid} ->
-            case State#state.coordinator_pid of
-                undefined -> ok;
-                CPid when is_pid(CPid) -> CPid ! {app_get_result, KeyHex, Val, DeliveringPid}
-            end,
+        {get_reply, _KeyHex, _Val, _DeliveringPid} ->
             loop(State);
 
-        {put_reply, KeyHex, Status, DeliveringPid} ->
-            case State#state.coordinator_pid of
-                undefined -> ok;
-                CPid when is_pid(CPid) -> CPid ! {app_put_result, KeyHex, Status, DeliveringPid}
-            end,
+        {put_reply, _KeyHex, _Status, _DeliveringPid} ->
             loop(State);
 
         %% Request Simulation Driver
@@ -232,7 +224,42 @@ loop(State) ->
 
         {restore_link, TargetPid} ->
             NewDropped = maps:remove(TargetPid, State#state.dropped_links),
+            case is_process_alive(TargetPid) of
+                true ->
+                    TargetPid ! {probe_restore, {State#state.id, State#state.hex, self()},
+                                 pastry_util:leaf_set_to_list(State#state.leaf_set)};
+                false ->
+                    ok
+            end,
             loop(State#state{dropped_links = NewDropped});
+
+        {probe_restore, RemoteNode, RemoteLeafList} ->
+            {_RId, _RHex, RPid} = RemoteNode,
+            NewDropped = maps:remove(RPid, State#state.dropped_links),
+            NewLS1 = pastry_util:add_to_leaf_set(State#state.leaf_set, RemoteNode, State#state.id),
+            NewLS2 = pastry_util:add_all_to_leaf_set(NewLS1, RemoteLeafList, State#state.id),
+            NewRT1 = pastry_util:add_to_routing_table(State#state.routing_table, RemoteNode, State#state.hex),
+            NewRT2 = pastry_util:add_all_to_routing_table(NewRT1, RemoteLeafList, State#state.hex),
+            RPid ! {probe_restore_reply, {State#state.id, State#state.hex, self()},
+                    pastry_util:leaf_set_to_list(NewLS2)},
+            loop(State#state{
+                dropped_links = NewDropped,
+                leaf_set = NewLS2,
+                routing_table = NewRT2
+            });
+
+        {probe_restore_reply, RemoteNode, RemoteLeafList} ->
+            {_RId, _RHex, RPid} = RemoteNode,
+            NewDropped = maps:remove(RPid, State#state.dropped_links),
+            NewLS1 = pastry_util:add_to_leaf_set(State#state.leaf_set, RemoteNode, State#state.id),
+            NewLS2 = pastry_util:add_all_to_leaf_set(NewLS1, RemoteLeafList, State#state.id),
+            NewRT1 = pastry_util:add_to_routing_table(State#state.routing_table, RemoteNode, State#state.hex),
+            NewRT2 = pastry_util:add_all_to_routing_table(NewRT1, RemoteLeafList, State#state.hex),
+            loop(State#state{
+                dropped_links = NewDropped,
+                leaf_set = NewLS2,
+                routing_table = NewRT2
+            });
 
         {request_leaf_set, RequesterPid} ->
             RequesterPid ! {leaf_set_response, pastry_util:leaf_set_to_list(State#state.leaf_set)},
@@ -276,7 +303,9 @@ loop(State) ->
         periodic_maintenance ->
             CleanLeafSet = pastry_util:clean_leaf_set(State#state.leaf_set, State#state.dropped_links),
             CleanRT = pastry_util:clean_routing_table(State#state.routing_table, State#state.dropped_links),
-            case CleanLeafSet /= State#state.leaf_set of
+            {LList, RList} = CleanLeafSet,
+            %% Proactively trigger leaf repair if depleted or changed
+            case length(LList) < 8 orelse length(RList) < 8 orelse CleanLeafSet /= State#state.leaf_set of
                 true -> trigger_leaf_repair(CleanLeafSet, State#state.id);
                 false -> ok
             end,
@@ -365,12 +394,16 @@ finalize_join(LeafList, ZNode, State) ->
     %% Build initial leaf set and routing table
     InitialLeafSet = pastry_util:add_all_to_leaf_set(pastry_util:new_leaf_set(), [ZNode | LeafList], SelfId),
     InitialRoutingTable = pastry_util:add_all_to_routing_table(pastry_util:new_routing_table(), AllKnownNodes, SelfHex),
+    
+    %% Populate neighborhood set with proximate peers discovered along join path (Section 2.4)
+    NeighborhoodCandidates = lists:usort(State#state.neighborhood_set ++ [ZNode | Collected]),
+    InitialNeighborhood = lists:sublist([N || N = {NId, _, NPid} <- NeighborhoodCandidates, NId /= SelfId, is_process_alive(NPid)], 16),
 
     %% Notify all nodes in leaf set, routing table, and neighborhood set
     NodesToNotify = lists:usort(
         pastry_util:leaf_set_to_list(InitialLeafSet) ++
         pastry_util:routing_table_to_list(InitialRoutingTable) ++
-        State#state.neighborhood_set
+        InitialNeighborhood
     ),
 
     SelfInfo = {SelfId, SelfHex, self()},
@@ -394,6 +427,7 @@ finalize_join(LeafList, ZNode, State) ->
     State#state{
         leaf_set = InitialLeafSet,
         routing_table = InitialRoutingTable,
+        neighborhood_set = InitialNeighborhood,
         status = ready,
         join_collected_nodes = []
     }.
@@ -597,8 +631,12 @@ deliver(Msg, KeyHex, _KeyInt, Hops, State) ->
             State
     end.
 
+%% Pastry Application API Upcall: forward(Msg, Key, NextHopId) (Section 2.3)
+%% Invoked before a message is forwarded to the next hop.
 app_forward(_Msg, _KeyHex, _NextHopHex) ->
     ok.
 
+%% Pastry Application API Upcall: newLeafs(LeafSet) (Section 2.3)
+%% Invoked when the node's leaf set changes.
 app_new_leafs(_LeafSet) ->
     ok.

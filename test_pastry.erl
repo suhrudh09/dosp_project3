@@ -71,29 +71,24 @@ run() ->
     io:format("Object Access Service PUT/GET verified: ~s retrieved successfully across nodes!~n", [RetrievedVal]),
     
     %% Assertion 2: Verify delivery landed on the true closest node in overlay
-    TKeyInt = pastry_util:hex_to_int(TKeyHex),
-    TrueMinDist = lists:min([pastry_util:dist(TKeyInt, NId) || {NId, _, _} <- JoinedNodes]),
-    {DelivId, _, _} = lists:keyfind(GetDelivPid, 3, JoinedNodes),
-    TrueMinDist = pastry_util:dist(TKeyInt, DelivId),
+    Checker = pastry_util:build_closest_checker(JoinedNodes),
+    true = pastry_util:is_closest_node(TKeyHex, GetDelivPid, Checker),
     io:format("Routing Assertion 1 passed: message landed on true numerically closest node!~n"),
     
     %% Assertion 3: Verify multiple random keys route to their exact closest node
     lists:foreach(
         fun(Idx) ->
             {_, RHex} = pastry_util:random_id(),
-            RInt = pastry_util:hex_to_int(RHex),
             ValStr = "AssertVal-" ++ integer_to_list(Idx),
             {ok, DPid} = pastry_node:put(Node1, RHex, ValStr),
-            BestDist = lists:min([pastry_util:dist(RInt, NId) || {NId, _, _} <- JoinedNodes]),
-            {NIdActual, _, _} = lists:keyfind(DPid, 3, JoinedNodes),
-            BestDist = pastry_util:dist(RInt, NIdActual),
+            true = pastry_util:is_closest_node(RHex, DPid, Checker),
             {ok, ValStr, DPid} = pastry_node:get(Node3, RHex)
         end,
         lists:seq(1, 10)
     ),
     io:format("Routing Assertion 2 passed: 10/10 random keys routed to true closest nodes!~n"),
     
-    %% Assertion 4: Verify fallback routing with dropped link
+    %% Assertion 4: Verify fallback routing with dropped link and state healing on restore
     {_, _, N1Pid} = lists:nth(1, JoinedNodes),
     {_, _, N2Pid} = lists:nth(2, JoinedNodes),
     N1Pid ! {drop_link, N2Pid},
@@ -102,6 +97,18 @@ run() ->
     {ok, _} = pastry_node:put(N1Pid, FHex, "fallback_test_val"),
     {ok, "fallback_test_val", _} = pastry_node:get(N2Pid, FHex),
     io:format("Routing Assertion 3 passed: routed successfully around dropped link!~n"),
+
+    %% Assertion 5: Verify link restoration and bidirectional state re-learning
+    N1Pid ! {restore_link, N2Pid},
+    timer:sleep(50),
+    N1Pid ! {get_info, self()},
+    receive
+        {node_info, _, _, _, LS1, _} ->
+            true = lists:keymember(N2Pid, 3, LS1)
+    after 2000 ->
+        error(restore_probe_timeout)
+    end,
+    io:format("Routing Assertion 4 passed: state healed and link restored successfully!~n"),
     
     %% Clean up test processes
     lists:foreach(fun({_Id, _Hex, Pid}) -> exit(Pid, kill) end, JoinedNodes),
