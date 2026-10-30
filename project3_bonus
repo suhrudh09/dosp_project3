@@ -1,0 +1,6 @@
+#!/usr/bin/env escript
+%% -*- erlang -*-
+%%! -pa .
+
+main(Args) ->
+    project3_bonus:main(Args).

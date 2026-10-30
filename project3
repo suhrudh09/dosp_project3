@@ -1,0 +1,19 @@
+#!/usr/bin/env escript
+%% -*- erlang -*-
+%%! -pa .
+
+main(Args) ->
+    case Args of
+        [NumNodesStr, NumRequestsStr] ->
+            NumNodes = list_to_integer(NumNodesStr),
+            NumRequests = list_to_integer(NumRequestsStr),
+            project3:run(NumNodes, NumRequests, 1000);
+        [NumNodesStr, NumRequestsStr, IntervalStr] ->
+            NumNodes = list_to_integer(NumNodesStr),
+            NumRequests = list_to_integer(NumRequestsStr),
+            IntervalMs = list_to_integer(IntervalStr),
+            project3:run(NumNodes, NumRequests, IntervalMs);
+        _ ->
+            io:format("Usage: ./project3 numNodes numRequests [intervalMs]~n"),
+            halt(1)
+    end.
