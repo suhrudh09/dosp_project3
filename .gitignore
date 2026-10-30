@@ -1,0 +1,11 @@
+# Compiled Erlang beam files
+*.beam
+
+# Erlang crash dumps
+*.dump
+erl_crash.dump
+
+# Build directories and tools
+.rebar/
+.rebar3/
+_build/
