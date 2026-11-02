@@ -63,7 +63,7 @@
      * **Routing Table Repair**: Queries peer nodes in the same row (`request_routing_entry`) to recover dead or missing routing entries.
      * **Periodic Background Maintenance**: Each peer actor runs a periodic maintenance timer that prunes dead actors and proactively triggers repair if a leaf set side has $< 8$ members.
      * **Fault-Tolerant Dynamic Rerouting**: Zero-downtime routing around dead or unreachable nodes via $L \cup R \cup M$ fallback rules.
-   * Tested up to 30% node crashes and 400 dropped links with **100% request delivery rate** and **>99.8% routing correctness**.
+   * Tested up to 30% node crashes and 400 dropped links with **100% request delivery rate** and **>99.7% routing correctness** (worst-case ~99.1%–99.5% across 30-trial benchmarks).
 
 ---
 

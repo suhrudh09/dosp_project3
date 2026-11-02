@@ -280,6 +280,25 @@ run_trials(N, Reqs, NumTrials) ->
         [30, 40, 50, 60, 70, 80]
     ),
     io:format("-----------------------------------------------------------------------------------------~n~n"),
+    io:format("-----------------------------------------------------------------------------------------~n"),
+    io:format(" MULTI-TRIAL EVALUATION: Connection / Link Failure Resilience (Nodes: ~p, Reqs/Node: ~p)~n", [N, Reqs]),
+    io:format("-----------------------------------------------------------------------------------------~n"),
+    io:format(" Dropped Links | Active Nodes | Trials | Mean Accuracy | Worst Trial | Mean Avg Hops ~n"),
+    io:format("-----------------------------------------------------------------------------------------~n"),
+    lists:foreach(
+        fun(Drops) ->
+            TrialResults = [run_silent(N, Reqs, Drops, connection) || _ <- lists:seq(1, NumTrials)],
+            Accuracies = [Acc || {_, Acc, _} <- TrialResults],
+            HopsList = [Hops || {_, _, Hops} <- TrialResults],
+            MeanAcc = lists:sum(Accuracies) / max(1, length(Accuracies)),
+            WorstAcc = lists:min(Accuracies),
+            MeanHops = lists:sum(HopsList) / max(1, length(HopsList)),
+            io:format("     ~4p      |     ~3p      |   ~2p   |    ~5.1f%     |   ~5.1f%    |      ~.2f         ~n",
+                      [Drops, N, NumTrials, MeanAcc, WorstAcc, MeanHops])
+        end,
+        [100, 200, 400]
+    ),
+    io:format("-----------------------------------------------------------------------------------------~n~n"),
     ok.
 
 run_silent(NumNodes, NumRequests, NumFailures, FailureType) ->
