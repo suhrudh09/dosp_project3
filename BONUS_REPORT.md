@@ -139,7 +139,7 @@ To systematically verify repeatability across link drops, `make trials` includes
 | **200**       | 200          | 30     | **99.9%**             | **99.1%**        | 1.93          |
 | **400**       | 200          | 30     | **99.7%**             | **99.2%**        | 1.93          |
 
-* **Defensible Accuracy**: Across 30 independent trials per condition in `./project3_bonus trials 30`, routing accuracy averaged **99.9%** (100 drops), **99.9%** (200 drops), and **99.7%** (400 drops), with worst-case trials at **~99.1%–99.5%**, establishing that uniform random link drops cost well under 1% routing accuracy and consistently maintain **>99.7%** mean correctness.
+* **Defensible Accuracy**: Across repeated 30-trial benchmark runs in `./project3_bonus trials 30`, routing accuracy averaged **99.9%** (100 drops), **99.9%** (200 drops), and **99.6%–99.8%** (400 drops), with worst-case trials of about **98.7%–99.5%**, establishing that uniform random link drops cost well under 1% routing accuracy and consistently maintain **>99.5%** mean correctness across runs.
 * **Redundant Paths**: Because nodes maintain multiple alternatives across their leaf set, routing table, and neighborhood set ($L \cup R \cup M$), severing up to 400 random links simply redirects traffic through equivalent alternative paths with negligible hop count overhead.
 
 ---
@@ -184,4 +184,4 @@ The empirical results confirm the profound resilience of the Pastry architecture
    * Leaf repair (`request_leaf_set`), routing repair (`request_routing_entry`), and restoration sync (`probe_restore`) actively reconstruct corrupted state.
    * Periodic background maintenance ensures fast convergence even during quiet intervals.
 3. **Graceful Degradation**:
-   * Even under concurrent loss of up to 40% of all nodes and 400 severed links, Pastry achieves **100.0% delivery** and **>99.7% routing accuracy** (with worst-case trials ~99.1%–99.5%) with minimal hop count penalty.
+   * Evaluated separately, both node failures (up to 40% crashes) and link failures (up to 400 severed links) achieve **100.0% delivery** and maintain **>99.5% routing accuracy** (with worst-case trials ~98.7%–99.5% for link drops) with minimal hop count penalty.
