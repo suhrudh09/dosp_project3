@@ -223,14 +223,14 @@ To provide complete technical transparency, the following design boundaries are 
 ---
 
 ## 6. File Structure
-* [project3.erl](file:///c:/Users/s/Videos/project3/project3.erl): Main CLI driver and coordinator process with fast $O(\log N)$ routing accuracy verification.
-* [pastry_node.erl](file:///c:/Users/s/Videos/project3/pastry_node.erl): The Pastry peer actor (join, routing, key-value object store, leaf & routing repair, periodic maintenance, link-restoration probe).
-* [pastry_util.erl](file:///c:/Users/s/Videos/project3/pastry_util.erl): 128-bit circular distance arithmetic, hex conversions, leaf set, routing table, $L \cup R \cup M$ fallback search, and circular binary-search accuracy checker.
-* [project3_bonus.erl](file:///c:/Users/s/Videos/project3/project3_bonus.erl): Bonus failure injector (node, connection, transient), single-run benchmark, and multi-trial Monte Carlo resilience suite (`run_trials`).
-* [benchmark_scale.erl](file:///c:/Users/s/Videos/project3/benchmark_scale.erl): Large-scale performance and hop count benchmark up to 10,000 nodes.
-* [test_pastry.erl](file:///c:/Users/s/Videos/project3/test_pastry.erl): Unit tests and multi-node routing, object access, fallback, and link-restoration assertions.
-* [test_network.erl](file:///c:/Users/s/Videos/project3/test_network.erl): Multi-node network join and delivery verification test.
-* [project3](file:///c:/Users/s/Videos/project3/project3) / [project3.bat](file:///c:/Users/s/Videos/project3/project3.bat): Executable launchers for Unix and Windows.
-* [project3_bonus](file:///c:/Users/s/Videos/project3/project3_bonus) / [project3_bonus.bat](file:///c:/Users/s/Videos/project3/project3_bonus.bat): Bonus executable launchers.
-* [Makefile](file:///c:/Users/s/Videos/project3/Makefile): Compilation, test, scale, bonus, trials, and clean targets.
-* [BONUS_REPORT.md](file:///c:/Users/s/Videos/project3/BONUS_REPORT.md): Detailed report and empirical evaluation of fault tolerance, self-healing, multi-trial statistics, and design boundaries.
+* [`project3.erl`](project3.erl): Main CLI driver and coordinator process with fast $O(\log N)$ routing accuracy verification.
+* [`pastry_node.erl`](pastry_node.erl): The Pastry peer actor (join, routing, key-value object store, leaf & routing repair, periodic maintenance, link-restoration probe).
+* [`pastry_util.erl`](pastry_util.erl): 128-bit circular distance arithmetic, hex conversions, leaf set, routing table, $L \cup R \cup M$ fallback search, and circular binary-search accuracy checker.
+* [`project3_bonus.erl`](project3_bonus.erl): Bonus failure injector (node, connection, transient), single-run benchmark, and multi-trial Monte Carlo resilience suite (`run_trials`).
+* [`benchmark_scale.erl`](benchmark_scale.erl): Large-scale performance and hop count benchmark up to 10,000 nodes.
+* [`test_pastry.erl`](test_pastry.erl): Unit tests and multi-node routing, object access, fallback, and link-restoration assertions.
+* [`test_network.erl`](test_network.erl): Multi-node network join and delivery verification test.
+* [`project3`](project3) / [`project3.bat`](project3.bat): Executable launchers for Unix and Windows.
+* [`project3_bonus`](project3_bonus) / [`project3_bonus.bat`](project3_bonus.bat): Bonus executable launchers.
+* [`Makefile`](Makefile): Compilation, test, scale, bonus, trials, and clean targets.
+* [`BONUS_REPORT.md`](BONUS_REPORT.md): Detailed report and empirical evaluation of fault tolerance, self-healing, multi-trial statistics, and design boundaries.

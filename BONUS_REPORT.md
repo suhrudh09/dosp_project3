@@ -107,6 +107,8 @@ The table below reflects empirical output directly from a 30-trial Monte Carlo b
 | **70%**           | 140          | 60              | 30     | **56.5%**             | **29.3%**        | 2.27          |
 | **80%**           | 160          | 40              | 30     | **25.0%**             | **13.0%**        | 1.43          |
 
+*Note on Statistical Variance*: Due to random node sampling and scheduler interleaving, empirical means typically vary by a few percentage points between independent multi-trial runs (e.g., ~87%–90% at 60%, ~51%–57% at 70%, and ~23%–25% at 80%), while individual worst-case trials exhibit wider variance (e.g., 22%–34% at 70%) whenever random kills cluster contiguously along a localized arc of the ring.
+
 #### Analysis of Node Failure Findings:
 1. **Unbroken Correctness at 30%**: The core 30% assignment baseline achieved **100.0% accuracy across every single trial executed**.
 2. **High Resilience at 40%–50%**: At 40% and 50% node loss, mean accuracy remains high (**99.7%** and **99.1%**). Occasional sub-100% runs occur (worst cases 95.0% and 93.8%) when uniform random sampling happens to concentrate node kills contiguously along one sector of the leaf ring.
