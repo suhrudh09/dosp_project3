@@ -215,7 +215,7 @@ To provide complete technical transparency, the following design boundaries are 
 1. **In-Flight Message Drops under Abrupt Churn (No Transport Retry)**:
    * The substrate handles pre-traffic failure detection and dynamically routes active traffic around known dead nodes and broken links.
    * If an actor process is killed **while a message is actively in flight to it**, Erlang's asynchronous runtime silently discards messages sent to dead PIDs.
-   * In empirical tests where 20% of nodes are killed mid-traffic during an active 300 ms request window, between **3 and 14 requests out of 3,000** (a 0.1%–0.5% loss rate) are dropped in transit. The core Pastry substrate does not implement transport-level acknowledgement timers or retry queues.
+   * In empirical tests where 20% of nodes are killed mid-traffic during an active 300 ms request window, between **3 and 77 requests out of 3,000** are dropped in transit across repeated churn runs. In-flight losses are typically under 1%, reaching up to ~2.6% in the worst run. The core Pastry substrate does not implement transport-level acknowledgement timers or retry queues.
 2. **Single-Destination In-Memory Storage (No Multi-Replica DHT)**:
    * Objects stored via `app_put` reside solely in the in-memory map (`app_store`) of the single destination node numerically closest to the key.
    * There is no $k$-way leaf set replica synchronization (as implemented in production DHT layers like PAST or CFS). Consequently, if a node crashes, objects exclusively held in its local RAM are permanently lost (e.g. killing 20% of nodes results in ~20% of subsequent GET queries returning `undefined`).

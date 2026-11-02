@@ -86,29 +86,31 @@ We evaluated random node crashes across 0% to 30% baseline failure rates:
 | **30%**          | 60         | 140             | 700            | 700                | **100.0%**    | **100.0%**                      | 2.08     |
 
 #### Extended Multi-Trial Monte Carlo Evaluation (`make trials`):
-To systematically test the limits of Pastry's fault tolerance, repeated independent trials were executed across higher failure rates ($30\% \dots 80\%$). The harness can be reproduced directly using `make trials`:
+To systematically test the limits of Pastry's fault tolerance, repeated independent trials can be executed across higher failure rates ($30\% \dots 80\%$) using `make trials` or `./project3_bonus trials [numTrials]`:
 
 ```bash
 make trials
 # or
+./project3_bonus trials 30
+# or
 erl -noshell -pa . -s project3_bonus run_trials -s init stop
 ```
 
-The table below summarizes multi-trial empirical distributions (combining internal harness runs and independent verification trials, 10–15 runs per condition):
+The table below reflects empirical output directly from a 30-trial Monte Carlo benchmark run (`./project3_bonus trials 30`, 30 independent runs per condition):
 
 | Node Failure Rate | Failed Nodes | Surviving Nodes | Trials | Mean Routing Accuracy | Worst-Case Trial | Mean Avg Hops |
 |:-----------------:|:------------:|:---------------:|:------:|:---------------------:|:----------------:|:-------------:|
-| **30%**           | 60           | 140             | 20     | **100.0%**            | **100.0%**       | 2.13          |
-| **40%**           | 80           | 120             | 20     | **99.8%**             | **96.0%**        | 2.18          |
-| **50%**           | 100          | 100             | 25     | **99.3%**             | **93.3%**        | 2.32          |
-| **60%**           | 120          | 80              | 20     | **90.2%**             | **70.0%**        | 2.63          |
-| **70%**           | 140          | 60              | 20     | **55.3%**             | **35.0%**        | 2.19          |
-| **80%**           | 160          | 40              | 20     | **26.5%**             | **13.5%**        | 1.51          |
+| **30%**           | 60           | 140             | 30     | **100.0%**            | **100.0%**       | 2.15          |
+| **40%**           | 80           | 120             | 30     | **99.7%**             | **95.0%**        | 2.17          |
+| **50%**           | 100          | 100             | 30     | **99.1%**             | **93.8%**        | 2.35          |
+| **60%**           | 120          | 80              | 30     | **89.9%**             | **71.8%**        | 2.53          |
+| **70%**           | 140          | 60              | 30     | **56.5%**             | **29.3%**        | 2.27          |
+| **80%**           | 160          | 40              | 30     | **25.0%**             | **13.0%**        | 1.43          |
 
 #### Analysis of Node Failure Findings:
 1. **Unbroken Correctness at 30%**: The core 30% assignment baseline achieved **100.0% accuracy across every single trial executed**.
-2. **High Resilience at 40%–50%**: At 40% and 50% node loss, mean accuracy remains exceptionally high (**99.8%** and **99.3%**). Occasional sub-100% trials occur when random sampling concentrates node kills contiguously along one sector of the circular space.
-3. **Phase Transition at $\ge 60\%$**: When more than half the overlay is eliminated, the probability that $|L|/2 = 8$ contiguous leaf nodes die simultaneously increases sharply. Without an underlying ring of leaf nodes to bridge the gap, the ring partitions into isolated segments. In this regime, messages continue to deliver locally at the closest surviving node in the current segment (hence 100% delivery rate), but global closest-node accuracy drops smoothly toward ~26% at 80% failure.
+2. **High Resilience at 40%–50%**: At 40% and 50% node loss, mean accuracy remains high (**99.7%** and **99.1%**). Occasional sub-100% runs occur (worst cases 95.0% and 93.8%) when uniform random sampling happens to concentrate node kills contiguously along one sector of the leaf ring.
+3. **Phase Transition at $\ge 60\%$**: When more than half the overlay is eliminated, the probability that $|L|/2 = 8$ contiguous leaf nodes die simultaneously increases sharply. Without an unbroken ring of leaf nodes to bridge the gap, the ring partitions into isolated segments. In this regime, messages continue to deliver locally at the closest surviving node in the current segment (hence 100% delivery rate), but global closest-node accuracy drops smoothly through ~89.9% (60%) and ~56.5% (70%) toward ~25.0% at 80% failure.
 
 ---
 
@@ -149,7 +151,7 @@ To provide complete technical transparency, the following design boundaries and 
 
 ### 5.1 In-Flight Packet Loss under Abrupt Churn (No Transport Retry)
 * **Design Scope**: The Pastry substrate routes around *known* dead nodes and dropped links.
-* **Empirical Measurement**: If nodes are abruptly terminated **while messages are actively in transit** (e.g. killing 20% of nodes during a 300 ms traffic window), empirical tests observe between **3 and 14 dropped requests out of 3,000** (a 0.1%–0.5% in-flight loss rate).
+* **Empirical Measurement**: If nodes are abruptly terminated **while messages are actively in transit** (e.g. killing 20% of nodes during an active 300 ms traffic window), between **3 and 77 requests out of 3,000** are dropped in transit across repeated churn runs. Packet losses under in-flight churn are typically under 1%, reaching up to ~2.6% in the worst run.
 * **Root Cause**: Erlang's asynchronous actor message passing (`Pid ! Msg`) silently discards messages sent to terminated processes. The core Pastry substrate does not implement transport-level acknowledgement timers, unacknowledged message queues, or hop-by-hop retransmission mechanisms.
 
 ### 5.2 Single-Destination In-Memory Storage (No Multi-Replica DHT)
