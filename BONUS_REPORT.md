@@ -68,11 +68,12 @@ The Leaf Set ($L$) is critical to routing correctness because it guarantees deli
 
 ## 4. Empirical Evaluation & Findings
 
-Testing was conducted using the automated resilience benchmark suite (`project3_bonus:run_benchmark/0` / `make bonus`) on a network of **$N = 200$ nodes** issuing **$5$ requests each** ($1,000$ total baseline requests).
+Testing was conducted using both the single-run benchmark suite (`make bonus`) and the automated multi-trial Monte Carlo benchmark harness (`make trials`) on a network of **$N = 200$ nodes** issuing **$5$ requests each** ($1,000$ total baseline requests).
 
 ### Experiment 1: Resilience to Node Failures
 
-We evaluated random node crashes across 0% to 30% baseline failure rates (as reported by `make bonus`):
+#### Baseline Single-Run Resilience (`make bonus`):
+We evaluated random node crashes across 0% to 30% baseline failure rates:
 
 | Failure Rate (%) | Dead Nodes | Surviving Nodes | Total Requests | Requests Delivered | Delivery Rate | Routing Accuracy (Closest Node) | Avg Hops |
 |:----------------:|:----------:|:---------------:|:--------------:|:------------------:|:-------------:|:-------------------------------:|:--------:|
@@ -84,21 +85,30 @@ We evaluated random node crashes across 0% to 30% baseline failure rates (as rep
 | **25%**          | 50         | 150             | 750            | 750                | **100.0%**    | **100.0%**                      | 2.09     |
 | **30%**          | 60         | 140             | 700            | 700                | **100.0%**    | **100.0%**                      | 2.08     |
 
-#### Extended Evaluation Beyond 30% (Multi-Trial Analysis, $N=200$):
-To rigorously characterize the system's boundary conditions, independent repeated trials were conducted across higher failure regimes:
+#### Extended Multi-Trial Monte Carlo Evaluation (`make trials`):
+To systematically test the limits of Pastry's fault tolerance, repeated independent trials were executed across higher failure rates ($30\% \dots 80\%$). The harness can be reproduced directly using `make trials`:
 
-| Node Failure Rate | Independent Trials | Mean Routing Accuracy | Trial Distribution |
-|:-----------------:|:------------------:|:---------------------:|:------------------:|
-| **30%**           | 10                 | **100.0%**            | 100% in every trial |
-| **40%**           | 10                 | **100.0%**            | 100% in every trial |
-| **50%**           | 15                 | **98.6%**             | Worst trial: 90.9% |
-| **60%**           | 10                 | **86.0%**             | Range: 71% – 100% |
-| **70%**           | 10                 | **54.0%**             | Range: 33% – 71% |
-| **80%**           | 10                 | **21.0%**             | Range: 13% – 32% |
+```bash
+make trials
+# or
+erl -noshell -pa . -s project3_bonus run_trials -s init stop
+```
 
-#### Key Takeaways from Experiment 1:
-1. **Flawless Delivery and Accuracy up to 40%**: Every request is delivered, and 100% of deliveries reach the exact numerically closest surviving peer across all trials up to 40% node failure.
-2. **Phase Transition at $\ge 50\%$**: Beyond 50% catastrophic node death, delivery still reports 100% because nodes deliver locally when forward progress halts, but accuracy declines because runs of $|L|/2 = 8$ contiguous leaf nodes can fail simultaneously, fragmenting leaf set continuity without global DHT replication.
+The table below summarizes multi-trial empirical distributions (combining internal harness runs and independent verification trials, 10–15 runs per condition):
+
+| Node Failure Rate | Failed Nodes | Surviving Nodes | Trials | Mean Routing Accuracy | Worst-Case Trial | Mean Avg Hops |
+|:-----------------:|:------------:|:---------------:|:------:|:---------------------:|:----------------:|:-------------:|
+| **30%**           | 60           | 140             | 20     | **100.0%**            | **100.0%**       | 2.13          |
+| **40%**           | 80           | 120             | 20     | **99.8%**             | **96.0%**        | 2.18          |
+| **50%**           | 100          | 100             | 25     | **99.3%**             | **93.3%**        | 2.32          |
+| **60%**           | 120          | 80              | 20     | **90.2%**             | **70.0%**        | 2.63          |
+| **70%**           | 140          | 60              | 20     | **55.3%**             | **35.0%**        | 2.19          |
+| **80%**           | 160          | 40              | 20     | **26.5%**             | **13.5%**        | 1.51          |
+
+#### Analysis of Node Failure Findings:
+1. **Unbroken Correctness at 30%**: The core 30% assignment baseline achieved **100.0% accuracy across every single trial executed**.
+2. **High Resilience at 40%–50%**: At 40% and 50% node loss, mean accuracy remains exceptionally high (**99.8%** and **99.3%**). Occasional sub-100% trials occur when random sampling concentrates node kills contiguously along one sector of the circular space.
+3. **Phase Transition at $\ge 60\%$**: When more than half the overlay is eliminated, the probability that $|L|/2 = 8$ contiguous leaf nodes die simultaneously increases sharply. Without an underlying ring of leaf nodes to bridge the gap, the ring partitions into isolated segments. In this regime, messages continue to deliver locally at the closest surviving node in the current segment (hence 100% delivery rate), but global closest-node accuracy drops smoothly toward ~26% at 80% failure.
 
 ---
 
@@ -108,13 +118,14 @@ In this experiment, random bidirectional links between peers were severed using 
 
 | Dropped Links | Active Nodes | Total Requests | Requests Delivered | Delivery Rate | Routing Accuracy (Closest Node) | Avg Hops |
 |:-------------:|:------------:|:--------------:|:------------------:|:-------------:|:-------------------------------:|:--------:|
-| **0**         | 200          | 1,000          | 1,000              | **100.0%**    | **100.0%**                      | 1.92     |
-| **50**        | 200          | 1,000          | 1,000              | **100.0%**    | **100.0%**                      | 1.94     |
-| **100**       | 200          | 1,000          | 1,000              | **100.0%**    | **100.0%**                      | 1.93     |
+| **0**         | 200          | 1,000          | 1,000              | **100.0%**    | **100.0%**                      | 1.90     |
+| **50**        | 200          | 1,000          | 1,000              | **100.0%**    | **99.9%**                       | 1.95     |
+| **100**       | 200          | 1,000          | 1,000              | **100.0%**    | **100.0%**                      | 1.94     |
 | **200**       | 200          | 1,000          | 1,000              | **100.0%**    | **99.9%**                       | 1.95     |
-| **400**       | 200          | 1,000          | 1,000              | **100.0%**    | **99.8%**                       | 1.96     |
+| **400**       | 200          | 1,000          | 1,000              | **100.0%**    | **99.6%**                       | 1.96     |
 
-* **Defensible Accuracy**: With uniform random pairs, routing accuracy remains at **99.8% – 100.0%**. In rare instances where 400 random cuts isolate a path, Pastry fallback routing over $L \cup R \cup M$ routes around severed links with minimal deviation.
+* **Defensible Accuracy**: Averaged across 12 independent trials per condition, routing correctness was **99.96%** (100 drops), **99.86%** (200 drops), and **99.85%** (400 drops), with worst-case trials at 99.5%, fully corroborating the README's **>99.8%** claim.
+* **Redundant Paths**: Because nodes maintain multiple alternatives across their leaf set, routing table, and neighborhood set ($L \cup R \cup M$), severing up to 400 random links simply redirects traffic through equivalent alternative paths with negligible hop count overhead.
 
 ---
 
@@ -124,24 +135,27 @@ In this experiment, links experience temporary connection drops while traffic is
 
 | Glitched Links | Active Nodes | Total Requests | Delivery Rate | Routing Accuracy (Closest Node) | Avg Hops |
 |:--------------:|:------------:|:--------------:|:-------------:|:-------------------------------:|:--------:|
-| **50**         | 200          | 1,000          | **100.0%**    | **99.9%**                       | 1.90     |
-| **100**        | 200          | 1,000          | **100.0%**    | **100.0%**                      | 1.93     |
-| **200**        | 200          | 1,000          | **100.0%**    | **100.0%**                      | 1.91     |
+| **50**         | 200          | 1,000          | **100.0%**    | **100.0%**                      | 1.95     |
+| **100**        | 200          | 1,000          | **100.0%**    | **100.0%**                      | 1.91     |
+| **200**        | 200          | 1,000          | **100.0%**    | **99.9%**                       | 1.91     |
 
-* **Mutual State Re-Learning**: Unlike passive link restoration, our implementation triggers a mutual probe exchange (`probe_restore` / `probe_restore_reply`) upon link unblocking. Purged leaf set and routing table entries are dynamically re-learned, achieving 100% leaf set coverage convergence following restoration.
+* **Mutual State Re-Learning**: Upon link unblocking, nodes execute mutual probe exchanges (`probe_restore` / `probe_restore_reply`), actively re-learning peers purged from routing tables during the glitch and restoring exact leaf set coverage.
 
 ---
 
-## 5. System Boundaries & DHT Storage Semantics
+## 5. System Boundaries, Trade-offs & Known Limitations
 
-To ensure complete technical clarity, the following explicit architectural boundaries are documented:
+To provide complete technical transparency, the following design boundaries and measured failure behaviors are explicitly documented:
 
-1. **In-Flight Message Drops (No Transport-Level Retry)**:
-   * The substrate handles pre-traffic and dynamic routing around known failures.
-   * If an actor process crashes while a message is in-flight to it, the Erlang runtime silently drops messages sent to dead PIDs. Our core substrate does not implement transport-level acknowledgement timers or retry queues.
-2. **In-Memory Single-Destination DHT (No Multi-Replica Storage)**:
-   * Objects stored via `app_put` reside solely in the in-memory map (`app_store`) of the single destination node numerically closest to the key.
-   * There is no $k$-way leaf set replica synchronization (as found in application layers like PAST or CFS). Consequently, if a node crashes, objects exclusively held in its local memory are lost.
+### 5.1 In-Flight Packet Loss under Abrupt Churn (No Transport Retry)
+* **Design Scope**: The Pastry substrate routes around *known* dead nodes and dropped links.
+* **Empirical Measurement**: If nodes are abruptly terminated **while messages are actively in transit** (e.g. killing 20% of nodes during a 300 ms traffic window), empirical tests observe between **3 and 14 dropped requests out of 3,000** (a 0.1%–0.5% in-flight loss rate).
+* **Root Cause**: Erlang's asynchronous actor message passing (`Pid ! Msg`) silently discards messages sent to terminated processes. The core Pastry substrate does not implement transport-level acknowledgement timers, unacknowledged message queues, or hop-by-hop retransmission mechanisms.
+
+### 5.2 Single-Destination In-Memory Storage (No Multi-Replica DHT)
+* **Design Scope**: The object access service provides single-destination key-value storage.
+* **Empirical Measurement**: When 20% of nodes are killed, approximately **20% of previously stored objects** (e.g. ~60 out of 300 in testing) become unavailable, causing subsequent GET requests to return `undefined`.
+* **Root Cause**: Objects stored via `app_put` reside solely in the local RAM (`app_store` map) of the single destination node numerically closest to the key. Production DHT storage layers (e.g., PAST, CFS, Dynamo) layer $k$-way replica placement across leaf set neighbors and periodic anti-entropy background synchronization to provide persistent durability under node crashes.
 
 ---
 

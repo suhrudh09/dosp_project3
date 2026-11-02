@@ -43,8 +43,9 @@
    * Exactly **one actor process per peer modeled** (`pastry_node.erl`).
    * No shared memory, locks, or non-actor concurrency.
 
-4. **Rigorous Routing Accuracy Verification**:
+4. **Rigorous Fast $O(\log N)$ Routing Accuracy Verification**:
    * The coordinator and test suites verify not only delivery success, but also **routing correctness**: confirming that every delivery lands on the peer actor with the true minimum circular distance to the key among all live nodes in the overlay.
+   * Utilizes precomputed circular binary search over sorted node IDs, checking accuracy in $O(\log N)$ without slowing down large-scale simulations.
    * On healthy networks, routing accuracy is **100.0%**.
 
 5. **Command-Line Interface & Timing**:
@@ -56,19 +57,22 @@
 6. **Bonus: Fault Tolerance & Self-Healing (20% Bonus)**:
    * **Node Failure Model**: Handles dynamic node crashes (process exit).
    * **Connection Failure Model**: Evaluated with **uniformly shuffled random pair link cuts** across the entire overlay.
-   * **Transient Connection Failure Model**: Evaluated with temporary glitches followed by automatic link restoration via `restore_link`.
+   * **Transient Connection Failure Model**: Evaluated with temporary glitches followed by automatic link restoration and mutual state probe re-learning (`probe_restore`).
    * **Self-Healing State Repair**:
      * **Leaf Set Repair**: Detects dead leaf members and queries the outermost live leaf node on that side (`request_leaf_set`) to restore leaf set integrity.
      * **Routing Table Repair**: Queries peer nodes in the same row (`request_routing_entry`) to recover dead or missing routing entries.
-     * **Periodic Background Maintenance**: Each peer actor runs a periodic maintenance timer that prunes dead actors and triggers repair.
+     * **Periodic Background Maintenance**: Each peer actor runs a periodic maintenance timer that prunes dead actors and proactively triggers repair if a leaf set side has $< 8$ members.
      * **Fault-Tolerant Dynamic Rerouting**: Zero-downtime routing around dead or unreachable nodes via $L \cup R \cup M$ fallback rules.
    * Tested up to 30% node crashes and 400 dropped links with **100% request delivery rate** and **>99.8% routing correctness**.
 
 ---
 
-## 2. Largest Network Handled
+## 2. Largest Network Handled & Scalability
 
 The system was evaluated across progressively larger topologies up to **10,000 nodes**:
+
+### Raw Scalability Benchmark (`make scale` / `benchmark_scale.erl`)
+The dedicated scale benchmark measures raw protocol join scaling and hop count progression against theoretical $\log_{16}(N)$ bounds:
 
 | Network Size ($N$) | Theoretical $\log_{16}(N)$ | Total Requests | Build Time | Request Time | Average Hops |
 |:------------------:|:--------------------------:|:--------------:|:----------:|:------------:|:------------:|
@@ -80,8 +84,9 @@ The system was evaluated across progressively larger topologies up to **10,000 n
 | **10,000**         | 3.32                       | 20,000         | 8,007 ms   | 3,639 ms     | **3.39**     |
 
 * **Largest Network Handled**: **10,000 nodes** (peer actors).
-* **Key Finding**: Average hop counts closely match $\log_{16}(N)$ at all scales, confirming Pastry's $O(\log_{2^b} N)$ logarithmic routing bound.
-* **Throughput**: 10,000 nodes were initialized, joined, and routed 20,000 requests in approximately **11.6 seconds total** (including end-to-end routing accuracy verification on all 20,000 deliveries).
+* **Hop Count Bound**: Average hop counts closely match $\log_{16}(N)$ at all scales, confirming Pastry's $O(\log_{2^b} N)$ logarithmic routing bound.
+* **Reference Test Hardware**: AMD Ryzen 5 7235HS (4 physical cores, 8 logical threads @ 3.2 GHz), 16 GB DDR5 RAM, Windows 11, Erlang OTP 25/27 SMP.
+* **Hardware Sensitivity**: In `benchmark_scale` without verification overhead, the 10,000-node request phase takes ~3.6 s on the reference 8-thread CPU and ~14.5 s on machines with fewer scheduler threads or power-constrained single-core clocks. In the full verified simulation (`project3.erl`), total execution takes ~11.6 s (~8.0 s network join + ~3.6 s verified request phase).
 
 ---
 
@@ -96,7 +101,7 @@ erlc pastry_util.erl pastry_node.erl project3.erl project3_bonus.erl benchmark_s
 ```
 
 ### Running Unit & Network Tests
-To execute the comprehensive test suite (including ring arithmetic, leaf set tests, routing table tests, cross-node PUT/GET object access assertions, and 50-node network simulation):
+To execute the comprehensive test suite (including ring arithmetic, leaf set tests, routing table tests, cross-node PUT/GET object access assertions, dropped-link fallback, and link-restoration state healing):
 ```bash
 make test
 # or
@@ -122,7 +127,7 @@ project3 100 5
 .\project3 100 5
 ```
 
-**Method 2: Unix / Mac / Linux (escript / executable)**
+**Method 2: Unix / Mac / Linux (executable / escript)**
 ```bash
 ./project3 100 5
 # or
@@ -137,7 +142,7 @@ erl -noshell -pa . -s project3 main 100 5 -s init stop
 *Parameters*:
 * `numNodes`: Number of peer actors to spawn in the overlay.
 * `numRequests`: Number of requests each peer issues (at 1 request/second).
-* *(Optional 3rd argument)*: `[intervalMs]` (defaults to `1000` ms for 1 request/second). For fast testing/grading, an interval such as `50` or `100` ms can be passed.
+* *(Optional 3rd argument)*: `[intervalMs]` (defaults to `1000` ms for 1 request/second). For fast testing/grading, an interval such as `10`, `50`, or `100` ms can be passed.
 
 **Sample Output**:
 ```
@@ -173,6 +178,14 @@ make bonus
 erl -noshell -pa . -s project3_bonus run_benchmark -s init stop
 ```
 
+### Running Multi-Trial Monte Carlo Resilience Suite
+To execute repeated independent trials across higher failure rates ($30\% \dots 80\%$) and compute statistical accuracy distributions:
+```bash
+make trials
+# or
+erl -noshell -pa . -s project3_bonus run_trials -s init stop
+```
+
 ### Running Custom Failure Scenarios
 ```cmd
 # Windows:
@@ -186,7 +199,7 @@ escript project3_bonus numNodes numRequests numFailures failureType
 * `failureType`:
   * `node`: Kills `numFailures` random nodes (`exit(normal)`).
   * `connection` / `link`: Permanently severs links between uniformly shuffled node pairs.
-  * `transient`: Temporarily severs links and auto-recovers them via `restore_link`.
+  * `transient`: Temporarily severs links and auto-recovers them via `restore_link` with mutual probe state re-learning.
 
 **Example**:
 ```cmd
@@ -195,15 +208,29 @@ project3_bonus 200 5 40 node
 
 ---
 
-## 5. File Structure
-* [project3.erl](file:///c:/Users/s/Videos/project3/project3.erl): Main CLI driver and coordinator process with routing accuracy verification.
-* [pastry_node.erl](file:///c:/Users/s/Videos/project3/pastry_node.erl): The Pastry peer actor (join, routing, key-value object store, leaf & routing repair, periodic maintenance).
-* [pastry_util.erl](file:///c:/Users/s/Videos/project3/pastry_util.erl): 128-bit circular distance arithmetic, hex conversions, leaf set, routing table, and $L \cup R \cup M$ fallback search.
-* [project3_bonus.erl](file:///c:/Users/s/Videos/project3/project3_bonus.erl): Bonus failure injector (node, connection, transient), accuracy verifier, and resilience test suite.
-* [benchmark_scale.erl](file:///c:/Users/s/Videos/project3/benchmark_scale.erl): Large-scale performance benchmark up to 10,000 nodes.
-* [test_pastry.erl](file:///c:/Users/s/Videos/project3/test_pastry.erl): Unit tests and multi-node routing & object access assertions.
+## 5. System Boundaries & Known Limitations
+
+To provide complete technical transparency, the following design boundaries are explicitly documented:
+
+1. **In-Flight Message Drops under Abrupt Churn (No Transport Retry)**:
+   * The substrate handles pre-traffic failure detection and dynamically routes active traffic around known dead nodes and broken links.
+   * If an actor process is killed **while a message is actively in flight to it**, Erlang's asynchronous runtime silently discards messages sent to dead PIDs.
+   * In empirical tests where 20% of nodes are killed mid-traffic during an active 300 ms request window, between **3 and 14 requests out of 3,000** (a 0.1%–0.5% loss rate) are dropped in transit. The core Pastry substrate does not implement transport-level acknowledgement timers or retry queues.
+2. **Single-Destination In-Memory Storage (No Multi-Replica DHT)**:
+   * Objects stored via `app_put` reside solely in the in-memory map (`app_store`) of the single destination node numerically closest to the key.
+   * There is no $k$-way leaf set replica synchronization (as implemented in production DHT layers like PAST or CFS). Consequently, if a node crashes, objects exclusively held in its local RAM are permanently lost (e.g. killing 20% of nodes results in ~20% of subsequent GET queries returning `undefined`).
+
+---
+
+## 6. File Structure
+* [project3.erl](file:///c:/Users/s/Videos/project3/project3.erl): Main CLI driver and coordinator process with fast $O(\log N)$ routing accuracy verification.
+* [pastry_node.erl](file:///c:/Users/s/Videos/project3/pastry_node.erl): The Pastry peer actor (join, routing, key-value object store, leaf & routing repair, periodic maintenance, link-restoration probe).
+* [pastry_util.erl](file:///c:/Users/s/Videos/project3/pastry_util.erl): 128-bit circular distance arithmetic, hex conversions, leaf set, routing table, $L \cup R \cup M$ fallback search, and circular binary-search accuracy checker.
+* [project3_bonus.erl](file:///c:/Users/s/Videos/project3/project3_bonus.erl): Bonus failure injector (node, connection, transient), single-run benchmark, and multi-trial Monte Carlo resilience suite (`run_trials`).
+* [benchmark_scale.erl](file:///c:/Users/s/Videos/project3/benchmark_scale.erl): Large-scale performance and hop count benchmark up to 10,000 nodes.
+* [test_pastry.erl](file:///c:/Users/s/Videos/project3/test_pastry.erl): Unit tests and multi-node routing, object access, fallback, and link-restoration assertions.
 * [test_network.erl](file:///c:/Users/s/Videos/project3/test_network.erl): Multi-node network join and delivery verification test.
 * [project3](file:///c:/Users/s/Videos/project3/project3) / [project3.bat](file:///c:/Users/s/Videos/project3/project3.bat): Executable launchers for Unix and Windows.
 * [project3_bonus](file:///c:/Users/s/Videos/project3/project3_bonus) / [project3_bonus.bat](file:///c:/Users/s/Videos/project3/project3_bonus.bat): Bonus executable launchers.
-* [Makefile](file:///c:/Users/s/Videos/project3/Makefile): Compilation, test, scale, and bonus targets.
-* [BONUS_REPORT.md](file:///c:/Users/s/Videos/project3/BONUS_REPORT.md): Detailed report and empirical evaluation of fault tolerance and resilience.
+* [Makefile](file:///c:/Users/s/Videos/project3/Makefile): Compilation, test, scale, bonus, trials, and clean targets.
+* [BONUS_REPORT.md](file:///c:/Users/s/Videos/project3/BONUS_REPORT.md): Detailed report and empirical evaluation of fault tolerance, self-healing, multi-trial statistics, and design boundaries.

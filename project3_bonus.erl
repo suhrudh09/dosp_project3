@@ -1,8 +1,14 @@
 -module(project3_bonus).
--export([main/1, run/4, run_benchmark/0]).
+-export([main/1, run/4, run_benchmark/0, run_trials/0, run_trials/1, run_trials/3]).
 
 main(Args) ->
     case Args of
+        ["trials"] ->
+            run_trials();
+        ["trials", TrialsStr] ->
+            run_trials(list_to_integer(TrialsStr));
+        ["benchmark"] ->
+            run_benchmark();
         [NumNodesStr, NumRequestsStr] ->
             %% Default failure mode: 10% node failures
             NumNodes = list_to_integer(NumNodesStr),
@@ -239,6 +245,39 @@ run_benchmark() ->
                       [LinkDrops, DelivRate, CorrectRate, AvgHops])
         end,
         [50, 100, 200]
+    ),
+    io:format("-----------------------------------------------------------------------------------------~n~n"),
+    ok.
+
+%%--------------------------------------------------------------------
+%% Multi-Trial Resilience Evaluation Harness (Item 2)
+%%--------------------------------------------------------------------
+run_trials() ->
+    run_trials(200, 5, 10).
+
+run_trials(Trials) when is_integer(Trials) ->
+    run_trials(200, 5, Trials).
+
+run_trials(N, Reqs, NumTrials) ->
+    io:format("~nRunning Multi-Trial Monte Carlo Resilience Benchmark Suite (~p trials per setting)...~n~n", [NumTrials]),
+    io:format("-----------------------------------------------------------------------------------------~n"),
+    io:format(" MULTI-TRIAL EVALUATION: Node Failure Resilience (Nodes: ~p, Reqs/Node: ~p)~n", [N, Reqs]),
+    io:format("-----------------------------------------------------------------------------------------~n"),
+    io:format(" Failures (%) | Failed Nodes | Trials | Mean Accuracy | Worst Trial | Mean Avg Hops ~n"),
+    io:format("-----------------------------------------------------------------------------------------~n"),
+    lists:foreach(
+        fun(Pct) ->
+            FailCount = round(N * Pct / 100),
+            TrialResults = [run_silent(N, Reqs, FailCount, node) || _ <- lists:seq(1, NumTrials)],
+            Accuracies = [Acc || {_, Acc, _} <- TrialResults],
+            HopsList = [Hops || {_, _, Hops} <- TrialResults],
+            MeanAcc = lists:sum(Accuracies) / max(1, length(Accuracies)),
+            WorstAcc = lists:min(Accuracies),
+            MeanHops = lists:sum(HopsList) / max(1, length(HopsList)),
+            io:format("    ~3p%       |     ~3p      |   ~2p   |    ~5.1f%     |   ~5.1f%    |      ~.2f         ~n",
+                      [Pct, FailCount, NumTrials, MeanAcc, WorstAcc, MeanHops])
+        end,
+        [30, 40, 50, 60, 70, 80]
     ),
     io:format("-----------------------------------------------------------------------------------------~n~n"),
     ok.

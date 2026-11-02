@@ -24,5 +24,8 @@ scale: all
 bonus: all
 	$(ERL) -noshell -pa . -s project3_bonus run_benchmark -s init stop
 
+trials: all
+	$(ERL) -noshell -pa . -s project3_bonus run_trials -s init stop
+
 clean:
 	-$(CLEAN_CMD)
