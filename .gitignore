@@ -9,3 +9,7 @@ erl_crash.dump
 .rebar/
 .rebar3/
 _build/
+
+# Archives
+*.zip
+
